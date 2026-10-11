@@ -22,6 +22,7 @@ from mcp_types import (
 )
 from mcp_types.version import LATEST_HANDSHAKE_VERSION
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.routing import Mount
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -1065,3 +1066,40 @@ async def test_anonymous_session_accepts_anonymous_requests(
     session_id = await _open_session(manager, None)
 
     assert await _request_session(manager, session_id, None) != 404
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/json",
+        "application/json; charset=utf-8",
+        "Application/JSON",
+        "APPLICATION/JSON",
+        "application/JSON; charset=utf-8",
+    ],
+)
+def test_check_content_type_is_case_insensitive(content_type: str) -> None:
+    """Media types are case-insensitive (RFC 9110 8.3.1), so casing must not
+    decide whether a POST is accepted (#3670)."""
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/mcp",
+        "headers": [(b"content-type", content_type.encode())],
+        "query_string": b"",
+    }
+
+    assert StreamableHTTPServerTransport._check_content_type(None, cast(Any, Request(scope))) is True
+
+
+@pytest.mark.parametrize("content_type", ["text/plain", "application/xml", ""])
+def test_check_content_type_still_rejects_other_media_types(content_type: str) -> None:
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/mcp",
+        "headers": [(b"content-type", content_type.encode())],
+        "query_string": b"",
+    }
+
+    assert StreamableHTTPServerTransport._check_content_type(None, cast(Any, Request(scope))) is False
